@@ -143,6 +143,8 @@
     background: var(--card); color: var(--text);
     border: 1px solid var(--line); border-radius: 10px;
     box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    /* v3.7.16：選單文字不可選取（Safari 右鍵／拖曳時不反白選單項目） */
+    -webkit-user-select: none; user-select: none;
   }
   .jr-menu-item {
     display: block; width: 100%; text-align: left;

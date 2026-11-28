@@ -73,16 +73,94 @@
       const handle = href.replace(/^\//, '').split('/')[0];
       if (handle) return handle.toLowerCase();
     }
+    const raw = rawProfileHandle(article);
+    return raw ? raw.toLowerCase() : null;
+  }
+
+  // v3.7.16：X 新版前端（2026-11 起逐步上線，tailwind、整頁沒有 data-testid、推文
+  // <article> 不帶 role="article"、時間軸是 ul > li）沒有 User-Name 區。作者是推文
+  // 頂端頭像／名字的個人頁連結 a[href="/<handle>"]——文件順序第一個「單段路徑」連結。
+  // 引用推文（巢狀 article）裡的連結不算。回原大小寫的 handle（extractAuthorInfo 要比對 href）
+  const PROFILE_PATH_RE = /^\/([A-Za-z0-9_]{1,15})$/;
+  function rawProfileHandle(article) {
+    if (!article || !article.querySelectorAll) return null;
+    for (const a of article.querySelectorAll('a[href^="/"]')) {
+      const m = PROFILE_PATH_RE.exec(a.getAttribute('href') || '');
+      if (!m) continue;
+      const inner = a.parentElement && a.parentElement.closest('article');
+      if (inner && inner !== article) continue;
+      return m[1];
+    }
     return null;
+  }
+
+  // v3.7.16：X 新版前端的推文頂端作者列（頭像＋名字＋@handle＋「更多」鈕）在 clone 裡移除——
+  // 合成作者頭（injectAuthorHeaders）取代它。舊版的作者列在 User-Name 區、cleaner 會整塊藏；
+  // 新版沒有 User-Name，cleaner 只藏得掉頭像與 @handle，名字連結殘留在標題上方（cage 實測）。
+  // 範圍：從第一個作者個人頁連結往上爬，爬到「再上一層就會含作者連結與按鈕以外的字」為止——
+  // 推文本文、標題、時間戳都在作者列的兄弟節點，不會被帶走。舊版（有 User-Name）不動
+  function stripAuthorRow(clone) {
+    if (!clone || !clone.querySelector || clone.querySelector('[data-testid="User-Name"]')) return null;
+    const raw = rawProfileHandle(clone);
+    if (!raw) return null;
+    const want = '/' + raw.toLowerCase();
+    let first = null;
+    for (const a of clone.querySelectorAll('a[href^="/"]')) {
+      if ((a.getAttribute('href') || '').toLowerCase() === want) { first = a; break; }
+    }
+    if (!first) return null;
+    const foreignText = (el) => {
+      let t = '';
+      const walk = (n) => {
+        if (n.nodeType === 3) { t += n.textContent; return; }
+        if (n.nodeType !== 1) return;
+        if (n.tagName === 'BUTTON' || n.tagName === 'svg' || n.tagName === 'SVG') return;
+        if (n.tagName === 'A' && (n.getAttribute('href') || '').toLowerCase() === want) return;
+        for (const c of n.childNodes) walk(c);
+      };
+      walk(el);
+      return t.replace(/\s+/g, '');
+    };
+    let row = first;
+    while (row.parentElement && row.parentElement !== clone && !foreignText(row.parentElement)) row = row.parentElement;
+    // 保險：作者列不會含標題、段落、作者頭像以外的圖
+    if (row.querySelector('h1, h2, p')) return null;
+    for (const img of row.querySelectorAll('img')) {
+      const a = img.closest('a');
+      if (!a || (a.getAttribute('href') || '').toLowerCase() !== want) return null;
+    }
+    row.remove();
+    return row;
+  }
+
+  // 推文的時間軸列：舊版 cellInnerDiv、新版 <li>（v3.7.16）
+  function timelineCellOf(article) {
+    if (!article || !article.closest) return null;
+    return article.closest('[data-testid="cellInnerDiv"]') || article.closest('li');
+  }
+  function isSiblingCell(el, mainCell) {
+    if (!el || !el.getAttribute) return false;
+    if (mainCell.getAttribute('data-testid') === 'cellInnerDiv') return el.getAttribute('data-testid') === 'cellInnerDiv';
+    return el.tagName === mainCell.tagName;
+  }
+  // 列內的推文 article：舊版帶 role="article"，新版沒有 role（v3.7.16）
+  function cellArticle(cell) {
+    return cell.querySelector('article[role="article"]') || cell.querySelector('article');
   }
 
   function findMainTweet(statusId) {
     if (!statusId) return null;
-    const articles = document.querySelectorAll('article[role="article"]');
+    // v3.7.16：X 新版前端的推文 <article> 不帶 role="article"——不限 role；
+    // 巢狀 article（引用推文）跳過，主推文一定是最外層那個
+    const articles = document.querySelectorAll('article');
     for (const a of articles) {
+      if (a.parentElement && a.parentElement.closest('article')) continue;
       // 主推文 article 必定含 link 指向 /status/<ID>（時間戳）。其他 reply / 推薦
-      // 不含此 status ID 的連結。
-      if (a.querySelector(`a[href*="/status/${statusId}"]`)) return a;
+      // 不含此 status ID 的連結——v3.7.16：引用主推文的回覆例外（引用卡裡的時間戳
+      // 也連到 /status/<ID>），落在巢狀 article 裡的連結不算
+      for (const l of a.querySelectorAll(`a[href*="/status/${statusId}"]`)) {
+        if (l.closest('article') === a) return a;
+      }
     }
     return null;
   }
@@ -97,7 +175,7 @@
   // 後段同作者但不屬本 thread 的推文（i=7 case）誤納入。
   function collectThreadArticles(mainArticle) {
     if (!mainArticle) return [];
-    const mainCell = mainArticle.closest && mainArticle.closest('[data-testid="cellInnerDiv"]');
+    const mainCell = timelineCellOf(mainArticle);
     if (!mainCell) return [mainArticle];
 
     const mainAuthor = getAuthorHandle(mainArticle);
@@ -107,8 +185,8 @@
 
     // 往前 walk：thread 起點以前的同作者推文
     let prev = mainCell.previousElementSibling;
-    while (prev && prev.getAttribute && prev.getAttribute('data-testid') === 'cellInnerDiv') {
-      const art = prev.querySelector('article[role="article"]');
+    while (isSiblingCell(prev, mainCell)) {
+      const art = cellArticle(prev);
       if (!art) break;
       if (getAuthorHandle(art) !== mainAuthor) break;
       articles.unshift(art);
@@ -117,8 +195,8 @@
 
     // 往後 walk：thread 主推文以後的同作者連續推文
     let next = mainCell.nextElementSibling;
-    while (next && next.getAttribute && next.getAttribute('data-testid') === 'cellInnerDiv') {
-      const art = next.querySelector('article[role="article"]');
+    while (isSiblingCell(next, mainCell)) {
+      const art = cellArticle(next);
       if (!art) break;
       if (getAuthorHandle(art) !== mainAuthor) break;
       articles.push(art);
@@ -156,6 +234,30 @@
     if (avatarEl) {
       const img = avatarEl.querySelector('img');
       if (img) avatarSrc = img.getAttribute('src') || img.src || null;
+    }
+    // v3.7.16：X 新版前端沒有 User-Name / UserAvatar——從作者個人頁連結抽：
+    // 頂端那幾個 a[href="/<handle>"]（頭像、名字、@handle 各一個）
+    if (!userName && !avatarEl) {
+      const raw = rawProfileHandle(article);
+      if (raw) {
+        const want = '/' + raw.toLowerCase();
+        for (const a of article.querySelectorAll('a[href^="/"]')) {
+          if ((a.getAttribute('href') || '').toLowerCase() !== want) continue;
+          const inner = a.parentElement && a.parentElement.closest('article');
+          if (inner && inner !== article) continue;
+          const t = (a.textContent || '').trim();
+          if (!avatarSrc) {
+            const img = a.querySelector('img');
+            if (img) avatarSrc = img.getAttribute('src') || img.src || null;
+          }
+          if (t && t.length <= 60) {
+            if (!handle && /^@\S+$/.test(t)) handle = t;
+            else if (!displayName && !t.startsWith('@')) displayName = t;
+          }
+          if (displayName && handle && avatarSrc) break;
+        }
+        if (!handle) handle = '@' + raw;
+      }
     }
     return { displayName, handle, avatarSrc };
   }
@@ -556,6 +658,7 @@
       // normalizeCloneForPaging 之前——後者用 getComputedStyle 中和 display，
       // 換過 tag 才不會把舊 div 的 computed 值套到已消失的節點上
       promoteArticleTitle(clone);
+      stripAuthorRow(clone);
       container.appendChild(clone);
     });
 
@@ -620,6 +723,7 @@
     convertVideos,
     normalizeCloneForPaging,
     promoteArticleTitle,
+    stripAuthorRow,
     enter,
     injectAuthorHeaders,
     exit,

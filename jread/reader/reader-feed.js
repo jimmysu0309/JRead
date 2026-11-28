@@ -423,6 +423,20 @@
     return el;
   }
 
+  // v3.7.16：macOS Safari（WebKit）右鍵會在送出 contextmenu 之前先選取游標下的字——卡片整張是
+  // <a>，於是整張卡片的標題／作者／摘要一起反白、壓在選單底下（Jimmy 2026-11-29 回報；Chromium 不會）。
+  // preventDefault 擋不到這個選取（發生在事件之前），只能事後清掉。只清落在這張卡片內的選取，
+  // 不動使用者在別處選好的字
+  function clearSelectionInCard(card) {
+    const win = card.ownerDocument && card.ownerDocument.defaultView;
+    const sel = win && typeof win.getSelection === 'function' ? win.getSelection() : null;
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return false;
+    const r = sel.getRangeAt(0);
+    if (!card.contains(r.startContainer) && !card.contains(r.endContainer)) return false;
+    sel.removeAllRanges();
+    return true;
+  }
+
   // v3.1.0：每張卡片能做的動作（與右鍵選單同一份）——清單鍵盤操作（attachKeyboardNav）用。
   // 一般分頁、搜尋結果、同作者 / 同網域都經 attachContextMenu 登記，鍵盤與右鍵不會各算一套
   const CARD_ACTIONS = new WeakMap(); // card → { kinds: Set, pick(kind) }
@@ -496,6 +510,7 @@
     card.addEventListener('contextmenu', (e) => {
       if (card.classList.contains('is-busy')) return;
       e.preventDefault();
+      clearSelectionInCard(card);
       if (Date.now() - lpOpenedAt < LONG_PRESS_CLICK_GUARD_MS) return;
       openCardMenu(card, e.clientX, e.clientY, items, pick);
     });
@@ -725,7 +740,7 @@
     feedTextVars, applyFeedText, FEED_TEXT_KEYS,
     setLocalThumbsForTest,
     formatMeta, formatCardDate, encodeMeta, createCard, cardCaps, attachKeyboardNav, KB_KEYS, trashConfirmText, TRASH_ACTIONS, pickInitialTab, renderFeed, actionCard, archiveCard, archiveErrorMessage,
-    swipeThreshold, swipeDecision, swipeOffset, openCardMenu, closeCardMenu,
+    swipeThreshold, swipeDecision, swipeOffset, openCardMenu, closeCardMenu, clearSelectionInCard,
     LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
     MAX_ITEMS, MORE_STEP, FEED_TABS, LATER_TEXT, INBOX_TEXT, SWIPE_OUT_MS
   };
