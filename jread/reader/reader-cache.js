@@ -96,8 +96,8 @@
     { id: 'new',     label: 'Inbox',   query: { location: 'new' },     empty: '收件匣目前沒有文章', later: 'remove', deletable: true },
     { id: 'later',   label: 'Later',   query: { location: 'later' },   empty: 'Later 目前沒有文章', inbox: 'remove', deletable: true },
     { id: 'archive', label: 'Archive', query: { location: 'archive' }, empty: '封存區目前沒有文章', archivable: false, inbox: 'remove', deletable: true },
-    // v3.1.0（Jimmy 2026-11-24「加一欄 Progress，顯示我剛剛正在看的文章」）：讀到一半、沒封存的，
-    // 最近讀的在前（JReader in_progress）。文章來自不同資料夾，卡片標出資料夾（showLocation）
+    // v3.1.0（Jimmy 2026-11-24「加一欄 Progress，顯示我剛剛正在看的文章」）：讀到一半的，加上封存的（讀完也列，
+    // JReader 2026-11-28），最近讀的在前、最多 100 篇（條件在 JReader in_progress）。文章來自不同資料夾，卡片標出資料夾（showLocation）
     { id: 'progress', label: 'Progress', query: { inProgress: true }, empty: '沒有讀到一半的文章', showLocation: true, deletable: true },
     // v3.1.0（Jimmy 2026-11-24「加入刪除文章和垃圾桶功能，刪除要確認」）：`deletable`＝右鍵有「刪除」（移到
     // 垃圾桶）；`trash`＝垃圾桶，右鍵是「還原 / 永久刪除」、上方有「清空垃圾桶」。不做滑動刪除（左滑是封存，
