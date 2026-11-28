@@ -11101,6 +11101,136 @@
     }
   }
 
+  // v3.7.13：標題 anchor 真的畫得出來（自己與到 articleEl 為止的祖先都不是 display:none、
+  // visibility:hidden，也沒被 hide）。findPreTitleAnchor 的退路會給「藏在行動版殼裡的 h1」
+  // （SEO 用的 sr-only 標題），搬動或以它為界清東西都會出錯
+  function titleAnchorIsRendered(anchor, articleEl) {
+    for (let n = anchor; n && n !== articleEl; n = n.parentElement) {
+      if (n.dataset && n.dataset.jreadHidden === '1') return false;
+      let cs;
+      try { cs = window.getComputedStyle(n); } catch (_) { return false; }
+      if (!cs || cs.display === 'none' || cs.visibility === 'hidden') return false;
+    }
+    return true;
+  }
+  // v3.7.13：標題下單獨的 # 標籤（toss.tech 標題下一顆非連結的 `<span>#Frontend</span>`）。
+  // Jimmy 2026-11-28 裁定（選 A）：比照 v1.0.17 分類 chip（hideBylineCategoryChips），清掉
+  // 標題下單獨的 # 標籤——分類示意，對閱讀是雜訊。
+  //
+  // 結構訊號（非站點特判，硬規則 3）：從主標題往 articleEl 爬，每一層「排在標題之後」的
+  // 兄弟分支依序看——
+  //   - 看得到的字全是 # 標籤（一到數個 `#詞`，詞長 <= TITLE_HASHTAG_TOKEN_MAX）、沒有媒體、
+  //     沒有標題 → 清掉
+  //   - 作者列 / 日期（preTitleBranchIsProtected 的 meta 訊號：time、byline 字樣、作者頁連結）
+  //     或沒畫出來的分支 → 跳過、繼續往後看
+  //   - 其他任何分支（主文、導言、圖）→ 標題區到此為止，整條停
+  // 只看標題區：主文裡的 # 行（程式碼註解、色碼、文中提到的標籤）一律不動。
+  // 語料庫普查（182 頁捲動模式，2026-11-28）：標題與第一段主文之間只有 # 標籤的元素只有
+  // toss.tech 原文、翻譯後各一處；其餘 # 開頭的元素都在主文裡（qiita、squidfunk 的程式碼與
+  // 色碼、forum.gamer 文中一行）
+  const TITLE_HASHTAG_TOKEN_MAX = 30;
+  const TITLE_HASHTAG_RE = new RegExp(`^[#＃]\\s*[^\\s#＃]{1,${TITLE_HASHTAG_TOKEN_MAX}}(?:\\s+[#＃]\\s*[^\\s#＃]{1,${TITLE_HASHTAG_TOKEN_MAX}})*$`, 'u');
+  function isTitleHashtagBranch(el) {
+    if (!el || !el.querySelector) return false;
+    if (/^(H[1-6]|PRE|CODE)$/.test(el.tagName) || el.querySelector('h1, h2, h3, h4, h5, h6, pre, code, img, picture, video, audio, iframe, svg image')) return false;
+    const text = norm(visibleRenderedText(el));
+    return !!text && text.length <= 120 && TITLE_HASHTAG_RE.test(text);
+  }
+  function hideTitleHashtagChips(articleEl, hidden, titleHead) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const anchor = findPreTitleAnchor(articleEl, titleHead);
+    if (!anchor || !titleAnchorIsRendered(anchor, articleEl)) return;
+    if (mainContentPrecedesAnchor(articleEl, anchor)) return;
+    let chainNode = anchor;
+    while (chainNode && chainNode !== articleEl) {
+      for (let sib = chainNode.nextElementSibling; sib; sib = sib.nextElementSibling) {
+        if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
+        if (!norm(visibleRenderedText(sib)) && !hasUnhiddenContentMedia(sib)) continue; // 沒畫出來的殼
+        if (isTitleHashtagBranch(sib)) {
+          if (!isInPreserved(sib)) hide(sib, hidden);
+          continue;
+        }
+        if (wrapperContainsMainContentP(sib)) return;
+        // 作者列 / 日期：分支裡另有 # 標籤時只清那一顆（標籤跟作者名排在同一列的寫法）
+        const metaText = norm(visibleRenderedText(sib));
+        const isMeta = metaText.length <= BYLINE_MAX_TEXT_LEN && !hasUnhiddenContentMedia(sib) &&
+          (sib.querySelector('time') || bylineTextProtects(metaText) || foldZhVariants(metaText).match(RELATIVE_TIME_RE) ||
+           clusterContainsAuthorProfileLink(sib));
+        if (!isMeta) return;
+      }
+      chainNode = chainNode.parentElement;
+    }
+  }
+
+  // v3.7.13：標題前全是 meta（日期、圖、作者）時，標題搬到最前面（techcrunch「In Brief」模板：
+  // DOM 順序是「分類＋日期列 → 首圖 → 作者 → 標題」，閱讀模式照 DOM 排、標題落在最後）。
+  // Jimmy 2026-11-28 裁定（選 A）：只在標題前全是 meta 時搬，先普查；不可做成一律搬最前。
+  //
+  // 結構訊號（非站點特判，硬規則 3）：從主標題往 articleEl 爬，收集每一層「排在標題之前、
+  // 畫得出來」的兄弟分支（標題前雜訊規則跑完之後，被清的不算），每一支都要是下列其中一種：
+  //   - 媒體：含內容媒體、可見字數 <= BYLINE_MAX_TEXT_LEN（首圖＋圖說／署名）
+  //   - 作者列 / 日期：time、byline 字樣、相對時間、作者頁連結，可見字數 <= BYLINE_MAX_TEXT_LEN
+  // 而且至少一支是作者列 / 日期——只有首圖在標題前（全幅首圖版型）、只有分類 kicker 在標題前
+  // 都是站方刻意的版面，不動。任何一支含標題、主文段落或不屬於上面兩種 → 不搬。
+  // 搬法：標題插到最前面那一支之前；還原走 __relocated（插回原位）。
+  const PRE_TITLE_META_TEXT_MAX = 60;
+  // 日期字樣：BYLINE_TEXT_WEAK_RE 去掉作者前綴「by」那一支＋保護用的日期寫法＋「發佈日期」類標籤
+  const PRE_TITLE_DATE_RE = new RegExp(
+    BYLINE_TEXT_WEAK_RE.source.replace(/^\\bby\\s\|/, '') + '|' + BYLINE_TEXT_PROTECT_ONLY_RE.source +
+    '|發[佈布][日時]期|更新[日時]期|刊出[日時]期', 'i');
+  function preTitleMetaKind(b) {
+    if (/^H[1-6]$/.test(b.tagName) || b.querySelector('h1, h2, h3, h4, h5, h6')) return null;
+    if (wrapperContainsMainContentP(b)) return null;
+    const text = norm(visibleRenderedText(b));
+    if (text.length > BYLINE_MAX_TEXT_LEN) return null;
+    if (b.tagName === 'TIME' || b.querySelector('time') || clusterContainsAuthorProfileLink(b, true)) return 'meta';
+    // 只靠日期／byline 字樣時限 PRE_TITLE_META_TEXT_MAX 字：日期列、「發表於…」都在 30 字內；
+    // 期刊引用列（pmc「editorial World J Radiol. 2017 Feb 28;9(2):27–33. doi: …」約 75 字，
+    // 期刊名＋卷期＋DOI）不算作者列 / 日期，標題不搬到它前面。
+    // 另外不可以有作者頁以外的連結或按鈕：引用列帶 DOI 連結與期刊選單鈕，譯成中文後字數會掉到
+    // 60 字內（pmc 翻譯後 55 字），只靠字數擋不住
+    const otherCtl = Array.from(b.querySelectorAll('a[href], button')).some(c => !(c.tagName === 'A' && isAuthorProfileAnchor(c)));
+    // 字樣只認「日期」：byline 字樣裡的作者前綴（by …）不算——作者一律靠作者頁連結認。
+    // newrepublic 標題上方的專欄 kicker「BIT BY BIT」含「by」，當成作者列就把標題搬到它前面
+    const ft = foldZhVariants(text);
+    if (text && !otherCtl && text.length <= PRE_TITLE_META_TEXT_MAX &&
+        (PRE_TITLE_DATE_RE.test(ft) || ft.match(RELATIVE_TIME_RE))) return 'meta';
+    if (hasUnhiddenContentMedia(b) || /^(IMG|PICTURE|FIGURE|VIDEO)$/.test(b.tagName) || b.querySelector('picture, video')) return 'media';
+    return null;
+  }
+  function relocateTitleBeforeMetaPreamble(articleEl, hidden, titleHead) {
+    if (!articleEl || !articleEl.querySelectorAll) return;
+    const anchor = findPreTitleAnchor(articleEl, titleHead);
+    if (!anchor || !anchor.parentNode || !titleAnchorIsRendered(anchor, articleEl)) return;
+    if (mainContentPrecedesAnchor(articleEl, anchor)) return;
+    const branches = [];
+    for (let chainNode = anchor; chainNode && chainNode !== articleEl; chainNode = chainNode.parentElement) {
+      for (let sib = chainNode.previousElementSibling; sib; sib = sib.previousElementSibling) {
+        if (sib.dataset && sib.dataset.jreadHidden === '1') continue;
+        // 沒畫出來的殼不算；<picture> / <video> 是內容媒體的標籤訊號（rect 還沒排版時也認，
+        // 與 preTitleBranchIsProtected 同款）
+        if (!norm(visibleRenderedText(sib)) && !hasUnhiddenContentMedia(sib) &&
+            !(sib.matches && sib.matches('picture, video')) && !sib.querySelector('picture, video')) continue;
+        branches.push(sib);
+      }
+    }
+    if (!branches.length) return;
+    let hasMeta = false;
+    for (const b of branches) {
+      const kind = preTitleMetaKind(b);
+      if (!kind) return;
+      if (kind === 'meta') hasMeta = true;
+    }
+    if (!hasMeta) return;
+    // branches 依「由內到外、由近到遠」收集，最後一支＝DOM 序最前面
+    const first = branches[branches.length - 1];
+    const parent = anchor.parentNode;
+    const next = anchor.nextSibling;
+    first.parentNode.insertBefore(anchor, first);
+    anchor.setAttribute('data-jread-relocated-title', '1');
+    if (Array.isArray(hidden)) hidden.push({ el: anchor, __relocated: { parent, next } });
+  }
+
   // v1.7.54：文章 header 區塊 guard（凌駕 strong keyword）。
   //
   // 結構訊號（非站點特判，硬規則 3）：wrapper 同時含 (a) 主標題 h1（沿用
@@ -16764,6 +16894,10 @@
       // 必須在 hideInsideArticlePreTitleNoise **之後**——讓 walker 先靠未隱藏的
       // badge 保護住同分支的 kicker（Opinion / Editorial Board），再單獨清掉 img
       safeRun(hidePreTitleDecorativeImages, articleEl, hidden, opts && opts.promotedTitleHead);
+      // v3.7.13：標題下單獨的 # 標籤（toss.tech）。跟在標題前雜訊之後，用同一個標題 anchor
+      safeRun(hideTitleHashtagChips, articleEl, hidden, opts && opts.promotedTitleHead);
+      // v3.7.13：標題前全是作者列／日期／首圖時，標題搬到最前面（techcrunch）。標題前雜訊清完才看
+      safeRun(relocateTitleBeforeMetaPreamble, articleEl, hidden, opts && opts.promotedTitleHead);
       // 文末兩條「位置＝最後一段主文之後」的規則排在所有 hide 類規則之後：主文容器選得
       // 大的頁面，站方頁尾聲明、側欄的長段落要先被前面的規則（footer / sidebar / 祖先
       // 兄弟）清掉，「最後一段主文」才是真的最後一段（womany 實測：clean 當下頁尾版權
@@ -16934,6 +17068,7 @@
             if (item.el.removeAttribute) item.el.removeAttribute('data-jread-relocated-header');
             if (item.el.removeAttribute) item.el.removeAttribute('data-jread-relocated-trailing');
             if (item.el.removeAttribute) item.el.removeAttribute('data-jread-relocated-dateline');
+            if (item.el.removeAttribute) item.el.removeAttribute('data-jread-relocated-title');
             try {
               if (parent && parent.isConnected) {
                 parent.insertBefore(item.el, (next && next.parentNode === parent) ? next : null);
