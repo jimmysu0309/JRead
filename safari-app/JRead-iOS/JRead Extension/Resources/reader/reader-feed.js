@@ -435,6 +435,8 @@
 
   // v3.1.0：清單多選（reader-select.js，JReader 才有）。有它時卡片右鍵多一項「選取」
   let selectHook = null;
+  // v3.7.14：卡片右鍵「文章資訊」（Jimmy 2026-11-28；reader-info.js 的面板以清單模式開，JReader 才有）
+  let infoHook = null;
 
   // 沒有任何動作時右鍵保留瀏覽器原生選單；有「刪除」等選單項時才接管
   // v3.1.0：有原始網址就多一項「開啟原始網址」（排第一個、不經 onPick，本頁直接開新分頁），所有服務都有
@@ -444,6 +446,7 @@
     const win = card.ownerDocument && card.ownerDocument.defaultView;
     const hasSource = !!(doc && RCM && typeof RCM.sourceUrlOf === 'function' && RCM.sourceUrlOf(doc));
     if (hasSource) items.push({ kind: 'source', label: '開啟原始網址' });
+    if (infoHook && doc && doc.id != null) items.push({ kind: 'info', label: '文章資訊' });
     if (caps.later) items.push({ kind: 'later', label: laterText.menu });
     if (caps.inbox) items.push({ kind: 'inbox', label: INBOX_TEXT.menu });
     if (caps.archive) items.push({ kind: 'archive', label: '封存' });
@@ -454,6 +457,7 @@
     if (!items.length) return; // 沒動作的分頁保留瀏覽器原生選單（開新分頁 / 複製連結）
     const pick = (kind) => {
       if (kind === 'source') { RCM.openSourceUrl(win, doc); return undefined; }
+      if (kind === 'info') { if (infoHook) infoHook.open(doc); return undefined; }
       if (kind === 'select') { if (selectHook) selectHook.start(card); return undefined; }
       return onPick(kind);
     };
@@ -617,6 +621,7 @@
     function onKey(e) {
       if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if (openMenu) return; // 右鍵選單開著：鍵盤歸選單（上下鍵、Esc）
+      if (infoHook && infoHook.isOpen()) return; // 文章資訊面板開著：清單快速鍵（封存、刪除…）不動作
       const t = e.target;
       const tag = t && t.tagName;
       if (isTyping(t)) return;
@@ -1401,6 +1406,43 @@
         });
       }
 
+      // v3.7.14：卡片右鍵「文章資訊」（Jimmy 2026-11-28）。同一個面板（reader-info.js）以 feed 模式開：一次一個，
+      // 開另一篇先拆掉舊的。面板裡搬資料夾 / 刪除 / 還原成功後比照卡片動作記進 removedIds（該離開的分頁藏起來）、
+      // 用畫面上那份清單重畫一次，再背景更新；搜尋中就重跑搜尋
+      const INFO_MOD = global.__JReadReaderInfo;
+      if (INFO_MOD && typeof INFO_MOD.attach === 'function' && typeof PC.supportsLibraryTools === 'function' && PC.supportsLibraryTools(service)) {
+        let infoPanel = null;
+        const onInfoChanged = (ev) => {
+          const d = ev && ev.doc;
+          if (!d || d.id == null) return;
+          if (lib && lib.isSearching()) { lib.refreshSearch(); return; }
+          const trashCfg = tabs.find((t) => t.trash);
+          const cfg = currentTab || initialTab;
+          if (ev.kind === 'trash') removedIds.set(d.id, trashCfg ? EXCEPT_PREFIX + scopeKeyFor(trashCfg) : '*');
+          else if (ev.kind === 'purge') removedIds.set(d.id, '*');
+          else if (ev.kind === 'restore') { if (cfg && cfg.trash) removedIds.set(d.id, scopeKeyFor(cfg)); }
+          else if (ev.kind === 'move' && ev.location) removedIds.set(d.id, LEFT_FOR_PREFIX + ev.location);
+          if (shown && shown.cfg === cfg) {
+            showDocs(shown.all.map((x) => (x && String(x.id) === String(d.id) && ev.kind === 'move' ? Object.assign({}, x, { location: ev.location }) : x)), cfg);
+          }
+          loadList(cfg, { refresh: true, silent: true });
+        };
+        infoHook = {
+          isOpen: () => !!(infoPanel && infoPanel.isOpen()),
+          open: (d) => {
+            if (infoPanel) { try { infoPanel.destroy(); } catch (_) { /* 舊面板拆不掉不影響新的 */ } infoPanel = null; }
+            const t = currentTab || initialTab;
+            try {
+              infoPanel = INFO_MOD.attach({
+                doc, win: global, NS: global.__JRead, PC, service, creds, docData: Object.assign({}, d), container: null,
+                tab: t && t.id, toast, feed: true, onChanged: onInfoChanged
+              });
+            } catch (_) { infoPanel = null; }
+            if (infoPanel) infoPanel.open();
+          }
+        };
+      }
+
       // 有新文章時自動更新清單（2026-11-25 JReader 交接單 prompt-for-jread-feed-auto-refresh）：
       // 別台裝置存的、RSS / Raindrop 推進來的文章，不用手動重新整理就出現。
       //   - 回到前景（visibilitychange → visible、window focus）：距上次載入 ≥ AUTO_MIN_GAP_MS 才更新
@@ -1423,6 +1465,7 @@
         if (selectHook && selectHook.isActive()) return 'select';
         if (DIALOG_MOD && typeof DIALOG_MOD.isOpen === 'function' && DIALOG_MOD.isOpen()) return 'dialog';
         if (openMenu) return 'menu';
+        if (infoHook && infoHook.isOpen()) return 'info';
         if (actionsInFlight > 0 || (lib && typeof lib.hasPending === 'function' && lib.hasPending())) return 'busy';
         if (paging.loading) return 'paging';
         if (Date.now() - lastScrollAt < AUTO_SCROLL_IDLE_MS) return 'scroll';

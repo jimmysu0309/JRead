@@ -155,6 +155,10 @@
     if (head && head.indexOf(sum.slice(0, 60)) !== -1) return '';
     return raw;
   }
+  // 摘要分段：換行切開、去掉空白段（純函式，spec 直接測）
+  function summaryParagraphs(text) {
+    return String(text || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  }
   function setSummaryOpen(block, open) {
     if (!block) return;
     const toggle = block.firstChild;
@@ -191,8 +195,18 @@
     body.setAttribute('data-jread-summary-text', '');
     // 不用左線＋縮排：styler 進場會把 div 的 padding 改寫成 0 !important、左線也被蓋掉（Playwright 實測），
     // 靠淡色＋小字（外層 0.85em）跟內文區隔
-    body.style.cssText = 'margin-top: 0.3em; opacity: 0.75; white-space: pre-wrap;';
-    body.textContent = text;
+    body.style.cssText = 'margin-top: 0.3em; opacity: 0.75;';
+    // 每段開頭一個項目符號（Jimmy 2026-11-28「摘要開頭請加入項目符號」，多段選每段各一個）：換行分段、
+    // 每段一個 <li>，清單的 outside 標記讓換行的字對齊在點的後面
+    const ul = document.createElement('ul');
+    ul.style.cssText = 'margin: 0; padding-left: 1.2em; list-style: disc outside;';
+    for (const para of summaryParagraphs(text)) {
+      const li = document.createElement('li');
+      li.style.cssText = 'margin: 0.15em 0;';
+      li.textContent = para;
+      ul.appendChild(li);
+    }
+    body.appendChild(ul);
     block.appendChild(toggle);
     block.appendChild(body);
     setSummaryOpen(block, open);
@@ -525,7 +539,7 @@
     return tab ? 'reader.html?tab=' + encodeURIComponent(tab) : 'reader.html';
   }
 
-  const api = { markOpened, refetchArticle, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey, summaryForHeader, buildSummaryBlock, attachSummaryToggle, SUMMARY_OPEN_KEY, withFeedSummary, openTextshot, textshotByline, readerFontInfo };
+  const api = { markOpened, refetchArticle, attachProgressSync, pickProgressDoc, feedUrl, sanitizeHtml, sanitizeDom, buildArticleContainer, formatDate, preloadImages, parseMeta, renderArticle, showEnterFailed, loadFromCache, progressFallbackEntry, pickProgress, attachArchiveKey, archiveKeyShape, attachSourceKey, isSourceKey, summaryForHeader, summaryParagraphs, buildSummaryBlock, attachSummaryToggle, SUMMARY_OPEN_KEY, withFeedSummary, openTextshot, textshotByline, readerFontInfo };
 
   // ---- 頁面 bootstrap ----
   // v2.5.1（2026-11-15 review D-07）：article.html 補載 lib/logger.js 後，除錯記錄的

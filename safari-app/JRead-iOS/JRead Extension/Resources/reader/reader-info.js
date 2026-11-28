@@ -107,6 +107,10 @@
   }
 
   // 目前閱讀進度（0–1）：翻頁模式讀頁碼，捲動模式讀捲動位置
+  function docProgress(d) {
+    const v = Number(d && d.reading_progress);
+    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+  }
   function currentProgress(win, NS) {
     const pm = NS && NS.pagedMode;
     const pos = pm && typeof pm.getPosition === 'function' ? pm.getPosition() : null;
@@ -240,7 +244,9 @@
     return e;
   }
 
-  // opts：{ doc, win, NS, PC, service, creds, docData, container, RC?, storage?, toast? }
+  // opts：{ doc, win, NS, PC, service, creds, docData, container, RC?, storage?, toast?, feed?, onChanged? }
+  // feed：清單頁開的（v3.7.14）——不掛快速鍵、進度讀文件、刪除後留在清單；onChanged({ kind, location?, doc })：
+  // 搬資料夾 / 刪除 / 還原 / 永久刪除成功後通知（清單更新卡片）
   // 回 { open, close, toggle, isOpen, render }（spec 用）；不支援的服務回 null
   function attach(opts) {
     const o = opts || {};
@@ -406,6 +412,7 @@
       }
       if (o.docData) o.docData.location = loc;
       if (!stale()) toast(doneText(LOCATION_ACTION[loc]) || '已移動', 'success');
+      if (typeof o.onChanged === 'function') o.onChanged({ kind: 'move', location: loc, doc: Object.assign({}, data) });
     });
     function move(loc) {
       if (loc === data.location) return Promise.resolve();
@@ -494,10 +501,18 @@
         if (o.docData) o.docData.deleted_at = null;
         render();
         toast(doneText('restore'), 'success');
+        if (typeof o.onChanged === 'function') o.onChanged({ kind: 'restore', doc: Object.assign({}, data) });
         return r;
       }
       if (RC && typeof RC.removeFromFeed === 'function' && typeof RC.accountKey === 'function' && storage) {
         try { await RC.removeFromFeed(storage, RC.accountKey(service, creds), id); } catch (_) {}
+      }
+      // 清單頁開的面板（feed 模式）：留在清單、提示一下，清單自己拿掉卡片；不寫「回清單時的提示」、不退出
+      if (o.feed) {
+        close();
+        toast(doneText(kind), 'success');
+        if (typeof o.onChanged === 'function') o.onChanged({ kind, doc: Object.assign({}, data) });
+        return r;
       }
       if (RC && typeof RC.setFeedNotice === 'function') {
         let session = o.session;
@@ -639,7 +654,8 @@
         put(row('', line)).classList.add('muted');
       }
 
-      const p = Math.round(currentProgress(win, NS) * 100);
+      // 清單頁開的面板：頁面捲動跟這篇無關，進度用文件記的值
+      const p = Math.round((o.feed ? docProgress(data) : currentProgress(win, NS)) * 100);
       const prog = el(doc, 'div');
       prog.appendChild(doc.createTextNode(p + '%'));
       const bar = el(doc, 'div', 'bar');
@@ -1000,7 +1016,21 @@
 
     // 離開頁面（關分頁、從懸浮選單回清單、重新整理）時還沒存的筆記：同步送出
     //（setJReaderNotes 帶 keepalive，頁面卸載後請求照樣送完；2026-11-24 審核 B-3）
-    win.addEventListener('pagehide', () => { if (notesDraft !== notesSaved) saveNotes(); });
+    const onPageHide = () => { if (notesDraft !== notesSaved) saveNotes(); };
+    win.addEventListener('pagehide', onPageHide);
+
+    // 拆掉這個面板（清單頁換一篇開時用）：存筆記、拿掉監聽與節點
+    function destroy() {
+      const saving = close();
+      win.removeEventListener('keydown', onPanelKey, true);
+      win.removeEventListener('pagehide', onPageHide);
+      if (hostEl && hostEl.parentNode) hostEl.parentNode.removeChild(hostEl);
+      hostEl = null;
+      return saving;
+    }
+
+    // v3.7.14：清單頁右鍵「文章資訊」開的面板（feed 模式）不掛 I / L / D 快速鍵——清單頁沒有「這一篇」
+    if (o.feed) return { open, close, toggle, destroy, isOpen: () => opened, render, refresh, panel: () => panel };
 
     // 快速鍵 I：window capture、須在 main.js keyguard 之前註冊（同 H / E 鍵）
     win.addEventListener('keydown', (e) => {
@@ -1051,7 +1081,7 @@
     // 懸浮按鈕選單的「文章資訊」（floating-icon.js 看到這個掛鉤才列出）
     if (NS) NS.onReaderInfo = toggle;
 
-    return { open, close, toggle, editTags, trashByKey, isOpen: () => opened, render, refresh, panel: () => panel };
+    return { open, close, toggle, destroy, editTags, trashByKey, isOpen: () => opened, render, refresh, panel: () => panel };
   }
 
   // 垃圾桶裡的文章：剩幾天自動永久刪除（purge_at 由 JReader 伺服器給，天數規則只在伺服器）
@@ -1067,7 +1097,7 @@
     return R && typeof R.hostOf === 'function' ? R.hostOf(url) : '';
   }
 
-  const api = { attach, OPEN_ATTR, OPEN_CSS, trashNote, ymd, readingMinutes, CJK_CHARS_PER_MIN, LATIN_WORDS_PER_MIN, tagNames, addTag, suggestTags, currentProgress, WIDE_MIN_PX, HOST_ID };
+  const api = { attach, docProgress, OPEN_ATTR, OPEN_CSS, trashNote, ymd, readingMinutes, CJK_CHARS_PER_MIN, LATIN_WORDS_PER_MIN, tagNames, addTag, suggestTags, currentProgress, WIDE_MIN_PX, HOST_ID };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
