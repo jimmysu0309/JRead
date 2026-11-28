@@ -52,6 +52,9 @@
 //        (c) 「基準本身對不對」：指紋只回答「變了沒」，基準的品質靠 accept 前看過
 //        (d) WebKit / Safari、iOS、字型實際字寬（佔位圖沒有內容、站方 webfont 不載）
 //        (e) 翻譯後的 DOM——除非該頁是用 capture --translate 擷取的翻譯後快照
+//        (f) MathML 公式內部的水平排列（字的 x 與寬度）——Chromium 數學字形寬度隨渲染行程
+//        狀態而變，整批並行時會偶發（2026-11-28 distill 查證，見比對端的 MATH_X_NOTE）；
+//        公式的文字、垂直位置與高度照比
 // -----------------------------------------------------------------------------
 'use strict';
 
@@ -212,7 +215,13 @@ function diffFingerprint(base, cur, opts) {
   let prev = null;
   for (const [i, j] of pairs) {
     const b = bt[i], c = ct[j];
-    if (Math.abs(b.x - c.x) > tol || Math.abs(b.w - c.w) > tol || Math.abs(b.h - c.h) > tol) sizeChanged.push({ b, c });
+    // MATH_X_NOTE（2026-11-28，KNOWN-ISSUES 第 9 項 distill 偶發查證）：MathML 字形的水平寬度在
+    // Chromium 不確定——同一個字型（STIX Two Math、同一個字形），∇ 寬 12.7 或 10.7px，取決於這個
+    // 渲染行程之前排過哪些頁；量完強制 math 重排、多等 1.5 秒都不變，所以不是「量太早」的時序問題。
+    // 單頁重放永遠一致，整批並行時哪個 worker 輪到哪些頁不固定才偶發。MathML 內的字（m: 1）不比
+    // 水平位置與寬度——驗：文字、垂直位置與高度、所在段落的框；不驗：公式內部的水平排列
+    const mathX = b.m || c.m;
+    if ((!mathX && (Math.abs(b.x - c.x) > tol || Math.abs(b.w - c.w) > tol)) || Math.abs(b.h - c.h) > tol) sizeChanged.push({ b, c });
     if (prev && prev[0] === i - 1 && prev[1] === j - 1) {
       const gb = b.y - (bt[i - 1].y + bt[i - 1].h);
       const gc = c.y - (ct[j - 1].y + ct[j - 1].h);
@@ -512,7 +521,10 @@ function pageFingerprint() {
     // 用 Range 量文字本身的框——區塊元素的框會包含子區塊，同一段文字改包一層就會變
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) continue;
-    out.text.push({ tag: el.tagName.toLowerCase(), t: full.slice(0, 90), n: full.length, x: r0(r.left + sx), y: r0(r.top + sy), w: r0(r.width), h: r0(r.height) });
+    const item = { tag: el.tagName.toLowerCase(), t: full.slice(0, 90), n: full.length, x: r0(r.left + sx), y: r0(r.top + sy), w: r0(r.width), h: r0(r.height) };
+    // 2026-11-28：MathML 裡的字標 m，比對時不看水平位置與寬度（見比對端的 MATH_X_NOTE）
+    if (el.closest && el.closest('math')) item.m = 1;
+    out.text.push(item);
   }
   return out;
 }

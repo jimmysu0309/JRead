@@ -194,6 +194,7 @@ node tools/corpus.js run --out /tmp/census --after ./my-census.js
 - 不驗快照之後站方改版——語料庫是當時的頁面
 - 不驗基準本身對不對——指紋只回答「變了沒」
 - 不驗 WebKit / Safari、iOS、字型實際字寬
+- 不驗 MathML 公式內部的水平排列（字的 x 與寬度）：Chromium 的數學字形寬度會隨渲染行程之前排過哪些頁而變（distill 的 ∇ 在 12.7／10.7px 之間跳，強制重排也不變），整批並行時偶發；公式的文字、垂直位置、高度照比（2026-11-28）
 - 翻譯後的 DOM 只有用 `--translate` 擷取的頁面才驗得到
 
 forcing function：`test/regression/tools-corpus.spec.js`（比對邏輯的分級判定；每份快照都要有基準）。
