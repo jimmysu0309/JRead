@@ -21,6 +21,8 @@
 //   node tools/corpus.js capture                  # 擷取站點清單裡還沒有快照的頁面
 //   node tools/corpus.js capture --url <URL>      # 加一頁（修過的 bug 頁面收進來）
 //   node tools/corpus.js capture --only bbc --force   # 重擷取（基準要跟著 accept）
+//   node tools/corpus.js capture --only en.wikipedia --force --scroll
+//                                                 # 擷取前先捲過整頁（站方捲到才排版的內容，例：維基 MathJax）
 //   node tools/corpus.js capture --url <URL> --html test/blocked-html/so.html
 //                                                 # 擋 headless 的站：主文件改用存好的 HTML 快照
 //                                                 #（子資源照樣從真站抓；可加 --translate）
@@ -592,6 +594,24 @@ function withTimeout(p, ms, label) {
 }
 
 // ---- capture ---------------------------------------------------------------
+// 逐屏捲到底（每屏停 400ms 讓 IntersectionObserver 觸發），到底後等網路靜下來再捲回頂端；
+// 上限 200 屏，防無限捲動的頁一直長
+async function scrollThrough(page) {
+  for (let i = 0; i < 200; i++) {
+    const atEnd = await page.evaluate(() => {
+      window.scrollBy(0, Math.round(window.innerHeight * 0.8));
+      const de = document.scrollingElement || document.documentElement;
+      return window.scrollY + window.innerHeight >= de.scrollHeight - 2;
+    });
+    await sleep(400);
+    if (atEnd) break;
+  }
+  await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+  await sleep(1500);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await sleep(500);
+}
+
 async function captureOne(ctx, url, opts) {
   const audits = require(path.join(__dirname, 'audit-lib.js'));
   const page = await ctx.newPage();
@@ -619,6 +639,11 @@ async function captureOne(ctx, url, opts) {
     catch (_) { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }); }
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
     await sleep(2000);
+    // --scroll（2026-11-28）：擷取前先逐屏捲到底、再捲回頂端。站方「進畫面才排版／才載」的
+    // 內容（en 維基 MathJax 的 <mjx-lazy>）不捲就以空殼存進快照，重放時永遠是空的。
+    // 預設不捲：無限捲動的站捲到底會多載一串文章，其他頁的快照內容會跟著變。
+    // 快照記 scrolled 欄位，list 顯示「先捲過」，重擷取時看得出要加這個旗標
+    if (opts.scroll) await scrollThrough(page);
     let translatedEls = null;
     // 翻譯後快照記下實際用的引擎（'gemini' / 'google'…）：Google MT 的譯文有佔位符外漏與
     // 簡體混入，會被誤當成 JRead 的問題；快照是哪個引擎翻的要查得到。原文快照為 null。
@@ -640,6 +665,7 @@ async function captureOne(ctx, url, opts) {
     if (snap.stats.textLen < 400) throw new Error(`頁面文字只有 ${snap.stats.textLen} 字（空頁或被擋）`);
     return {
       v: 1, url, finalUrl, capturedAt: new Date().toISOString(), translated: !!opts.translate, translatedEls, translateEngine,
+      scrolled: !!opts.scroll,
       htmlSource: opts.html ? path.relative(PROJECT_ROOT, path.resolve(opts.html)) : null,
       viewport: { width: 1280, height: 900 }, stats: snap.stats, html: snap.html, css, images: snap.images
     };
@@ -684,7 +710,7 @@ async function cmdCapture(args) {
         if (i >= todo.length) break;
         const t = todo[i];
         try {
-          const arc = await withTimeout(captureOne(ctx, t.url, { translate: args.translate, html: args.html }), args.translate ? 240000 : 120000, '擷取');
+          const arc = await withTimeout(captureOne(ctx, t.url, { translate: args.translate, html: args.html, scroll: args.scroll }), args.translate ? 240000 : 120000, '擷取');
           fs.writeFileSync(archivePath(t.id), zlib.gzipSync(Buffer.from(JSON.stringify(arc))));
           ok++;
           const kb = Math.round(fs.statSync(archivePath(t.id)).size / 1024);
@@ -897,7 +923,7 @@ function parseArgs(argv) {
     variants: get('--variants', 'scroll').split(',').map((s) => s.trim()).filter(Boolean),
     shots: get('--shots', null) === 'all' ? Infinity : (parseInt(get('--shots', ''), 10) || null),
     tail: get('--tail', null) === null ? undefined : Math.max(0, parseInt(get('--tail', '0'), 10) || 0),
-    force: argv.includes('--force'), translate: argv.includes('--translate'),
+    force: argv.includes('--force'), translate: argv.includes('--translate'), scroll: argv.includes('--scroll'),
     set: argv.reduce((acc, a, i) => { if (a === '--set' && argv[i + 1]) { const [k, ...v] = argv[i + 1].split('='); let val = v.join('='); try { val = JSON.parse(val); } catch (_) { /* 字串 */ } acc[k] = val; } return acc; }, {})
   };
 }
@@ -993,7 +1019,7 @@ async function main() {
         const size = fs.statSync(archivePath(id)).size;
         total += size;
         const a = readArchive(id);
-        console.log(`${id}  ${Math.round(size / 1024)}K  ${a.capturedAt.slice(0, 10)}${a.translated ? `  翻譯後（${a.translateEngine || '引擎未記'}）` : ''}${a.htmlSource ? `  HTML 快照（${a.htmlSource}）` : ''}  ${a.url}`);
+        console.log(`${id}  ${Math.round(size / 1024)}K  ${a.capturedAt.slice(0, 10)}${a.translated ? `  翻譯後（${a.translateEngine || '引擎未記'}）` : ''}${a.htmlSource ? `  HTML 快照（${a.htmlSource}）` : ''}${a.scrolled ? '  先捲過' : ''}  ${a.url}`);
       }
       console.log(`共 ${ids.length} 頁，${(total / 1048576).toFixed(1)}M`);
       return 0;

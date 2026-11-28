@@ -148,6 +148,7 @@ node tools/corpus.js accept                # 差異都確認是預期的 → 收
 node tools/corpus.js capture --url <URL>   # 把一頁收進語料庫（修過的 bug 頁面都該收）
 node tools/corpus.js capture --url <URL> --translate   # 收翻譯後的快照（id 尾端 _translated）；用的翻譯引擎記在快照的 translateEngine，`list` 會顯示
 node tools/corpus.js capture --url <URL> --html test/blocked-html/<檔名> [--translate]   # 擋 headless 的站：主文件用存好的 HTML 快照（子資源照樣從真站抓）；來源記在快照的 htmlSource
+node tools/corpus.js capture --url <URL> --scroll [--translate]   # 擷取前先逐屏捲到底再捲回頂端：站方「捲到才排版／才載」的內容（en 維基 MathJax 的 `<mjx-lazy>`）不捲就以空殼存進快照。預設不捲（無限捲動的站會多載內容）；快照記 `scrolled`，`list` 顯示「先捲過」，重擷取這類頁要記得加
 node tools/corpus.js list
 ```
 
