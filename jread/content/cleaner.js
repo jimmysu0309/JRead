@@ -9894,6 +9894,16 @@
       // `open` 是屬性不是樣式 → 走 hidden 陣列的專用還原分支（與 __titleClone /
       // __relocated 同一個機制），不進 __styleResets
       hidden.push({ el: det, __reopened: true });
+      // v3.7.15：打開 <details> 之後，內容仍可能被站方另一層樣式壓著——Docusaurus
+      // 的收合元件在 <summary> 旁包一層 `style="display:none; overflow:hidden; height:0"`
+      // 的 div，用 JS 動畫控制開合，`open` 屬性管不到它（jestjs 實測：攤開後只剩
+      // summary 的空框，裡面兩段內文寬 0）。直接子層若仍收合，照 takeTarget 中和
+      //（同一套 isSiteCollapsedContent 判定：要有字、parent 已 render；同一套還原）。
+      // 語料庫普查 182 份：攤開的 10 個 <details> 只有 jestjs 兩份有這層，其餘不受影響
+      for (const child of det.children) {
+        if (child.tagName === 'SUMMARY') continue;
+        takeTarget(child);
+      }
     }
 
     expandTruncatedProseTails(articleEl, expanded, seen);
